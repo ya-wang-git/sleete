@@ -3,7 +3,7 @@
 #   Author: Zhiwei Zhang
 #   Description: Machine learning for efficient estimation of treatment effects with or without sample splitting
 #   Change History:
-#   Last Modified Date: 09/20/2024
+#   Last Modified Date: 03/10/2025
 #################################################################################################### .
 #' @name mleete
 #' @title mleete
@@ -40,7 +40,7 @@
 #'
 mleete <- function(data, resp, event=NULL, trt, stratcov=NULL, basecov.cont=NULL, basecov.cat=NULL,
                    pi=NULL, bounds=c(-Inf, Inf), method="log.HR", ...,
-                   SL.method="SL.lm", sample.splitting=FALSE, n.folds.cf=5){
+                   SL.method="SL.lm", sample.splitting=TRUE, n.folds.cf=5){
 
   method = eval(as.symbol(method))
 

@@ -1,0 +1,218 @@
+---
+  output: github_document
+---
+  <!-- markdownlint-disable-file -->
+  <!-- README.md needs to be generated from README.Rmd. Please edit that file -->
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  # eval = FALSE,
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "README-"
+)
+```
+
+# sleete 
+
+**S**uper **L**earner for **E**fficient **E**stimation of **T**reatment **E**ffects in Randomized Clinical Trials.
+
+
+## Installation
+
+The `sleete` package can be installed from *GitHub* with:
+
+```{r gh-installation, eval = FALSE}
+devtools::install_github('ya-wang-git/sleete')
+```
+
+
+## Get Started
+
+The `sleete` package depends on the `SuperLearner` and `survival` packages. In addition, any machine learning algorithms that will be used should be made available by installing the corresponding packages or as user-defined wrapper functions. 
+
+The `sleete` package has two public functions: `mleete()` and `sleete()`. The former uses one specified learning algorithm to estimate the optimal augmentation, while the latter combines multiple algorithms into a super learner. Except for that difference, the two functions serve the same purpose and have similar syntax:
+
+```{r, eval = FALSE}
+mleete(data, resp, event=NULL, trt, stratcov=NULL, basecov.cont=NULL,
+        basecov.cat=NULL, pi=NULL, bounds=c(-Inf, Inf), method="log.HR", ...,
+        SL.method="SL.lm", sample.splitting=TRUE, n.folds.cf=5)
+
+sleete(data, resp, event=NULL, trt, stratcov=NULL, basecov.cont=NULL,
+        basecov.cat=NULL, pi=NULL, bounds=c(-Inf, Inf), method="log.HR", ...,
+        SL.library=c("SL.lm", "SL.gam", "SL.rpart", "SL.randomForest"),
+        n.folds.cv=5, sample.splitting=TRUE, n.folds.cf=5)
+```
+
+**Arguments**
+
+* The argument `data` is a data frame that contains the outcome, treatment and baseline covariate data to be used in the analysis.
+
+* The argument `resp` provides the name of the (main) outcome variable. For a survival endpoint, `resp` is the observed event time $X$, which may be a failure time or a censoring time.
+
+* The argument `event` provides the name of the event type indicator $\Delta$ (1 failure; 0 censoring) for a survival endpoint. This optional argument should be ignored for a non-survival endpoint.
+
+* The argument `trt` provides the name of the treatment variable, a numerical or character string vector with two distinct values. In both cases, the higher value is assumed to represent the experimental treatment ($A = 1$).
+
+* The argument `stratcov` provides the name(s) of the stratification variable(s) to be used in a stratified analysis (e.g., a stratified PH model). This optional argument should only be invoked when the initial estimator $\bar{\theta}$ involves stratification; otherwise it should be ignored. Note that `stratcov` pertains solely to the analysis that produces $\bar{\theta}$ and is unrelated to other types of stratification such as stratified randomization.
+
+* The argument `basecov.cont` provides the names of continuous baseline covariates to be included in covariate adjustment.
+
+* The argument `basecov.cat` provides the names of categorical baseline covariates to be included in covariate adjustment. These will be represented using dummy variables (one set of dummy variables for each categorical covariate). If `stratcov` is specified, its components may or may not be included in `basecov.cat`. Our recommendation is to include any and all stratification variables in `basecov.cat`.
+
+* The argument `pi` is the probability $\pi$ of receiving the experimental treatment, which should be known in a randomized clinical trial. If unspecified, `pi` will be set equal to the actual proportion of study subjects who were assigned to the experimental treatment.
+
+* The argument `bounds` represents known lower and upper bounds, if any, for the treatment effect measure to be estimated. The effect of `bounds` is to force point estimates of $\theta$ to stay within the natural range by truncating them if necessary. For example, if the effect measure is a difference in survival probability, the natural range for $\theta$ is $[−1, 1]$, and one may specify `bounds=c(-1,1)`. If $\theta$ is the difference in RMST at time $\tau$ , the natural range is $[−\tau, \tau]$.
+
+* The argument `method` specifies the initial estimator $\bar{\theta}$ and the associated influence function estimate $\hat{\psi}$, which may be computed analytically or empirically. Operationally, the `method` object is a list of two mandatory components and one optional component. The two mandatory components are `pt.est`, a function for computing $\bar{\theta}$, and `inf.fct.avail`, a logical indicator for the availability of a function to compute $\hat{\psi}$ analytically. If the value of `inf.fct.avail` is `TRUE`, one has to also supply a function named `inf.fct` to compute $\hat{\psi}$ analytically. If the value of `inf.fct.avail` is `FALSE`, the function `inf.fct` is not needed and $\hat{\psi}$ will be computed using a general-purpose empirical influence function. Currently, there are five built-in methods available for survival endpoints:
+
+  * `"log.HR"` for the log-HR in a PH model;
+  * `"surv.diff"` for the difference in survival probability at a specified time point;
+  * `"RMST.diff"` for the difference in RMST at a specified time point;
+  * `"MW.cens"` for Mann–Whitney-type effect measures (such as the win-lose probability difference) for restricted survival times;
+  * `"log.HR.strat"` for the log-HR in a stratified PH model.
+
+&nbsp; &nbsp; &nbsp; &nbsp; The first three methods are implemented with analytical influence functions, and the last two without (i.e., `inf.fct.avail=FALSE`). In addition to the built-in methods, users can define their own methods in the same format. For illustration, the current definition of the `"log.HR.strat"` method is provided below:
+
+```{r, eval = FALSE}
+    # point estimate
+    pt.est.log.HR.strat = function(mData) {
+      x = mData[,1]; delta = mData[,2]; a = mData[,3]; s = mData[,4]
+      dat = Surv(x, delta)
+      mod = coxph(dat~a+strata(s))
+      coef(mod)
+    }
+    
+    # the method
+    log.HR.strat = list(pt.est=pt.est.log.HR.strat, inf.fct.avail=FALSE)
+```
+
+&nbsp; &nbsp; &nbsp; &nbsp; In the above code section, `mData` is not the original data frame but a re-structured numerical data matrix whose $i$th row is $(X_i, \Delta_i, A_i, \boldsymbol{W}′_i)$, $i = 1, ... , n$. The first component of $\boldsymbol{W}$ is the stratum number $(1, 2, ... )$.
+
+* Following the `method` argument, optional arguments may be provided in place of the dots `(. . . )`. If specified, such optional arguments will be fed into the specified method. One example of an optional argument is the time point (named `tau`) required by the `"surv.diff"`, `"RMST.diff"` and `"MW.cens"` methods. Another example is the kernel function `h` in the `"MW.cens"` method, where the default leads to the win-lose probability difference.
+
+* The argument `SL.method`, specific to the `mleete()` function, specifies the prediction algorithm that will be used to estimate the optimal augmentation. Its value must be the name of one of the wrapper functions in the `SuperLearner` package. A full list of wrapper functions available in `SuperLearner` can be found by typing `listWrappers()`. The default function `SL.lm` corresponds to the linear regression method.
+
+* The argument `SL.library`, specific to the `sleete()` function, specifies the super learner library (i.e., the collection of candidate algorithms to be combined). Its value is a character vector consisting of the names of the wrapper functions for the candidate algorithms. The default library consists of the following prediction algorithms: linear model, additive model, regression tree, and random forest. The corresponding wrapper functions are `SL.lm`, `SL.gam`, `SL.rpart`, and `SL.randomForest`, respectively.
+
+* The argument `n.folds.cv`, also specific to the `sleete()` function, specifies the number of folds in the cross-validation procedure within the super learner. This is not the same procedure for obtaining a cross-validated variance estimate. The latter is specified by the `sample.splitting` and `n.folds.cf` arguments.
+
+* The argument `sample.splitting` is a logical indicator for the use of sample splitting or cross-fitting. The use of sample splitting is not essential for the linear regression method when the sample size is moderate (e.g., 250) or large, but is highly recommended when nonparametric machine learning methods are used to estimate the optimal augmentation.
+
+* The argument `n.folds.cf` specifies the number of folds in the sample splitting or cross-fitting procedure. This procedure is external to the cross-validation procedure in the super learner; that is, in the `sleete()` function with `sample.splitting=TRUE`, super learning is performed separately within each partitioning that results from the sample splitting procedure.
+
+
+**Output**
+
+* The `mleete()` function returns a $2 \times 2$ numerical matrix with point estimates in the first column and standard errors in the second column. The first row of the matrix is for the unadjusted method specified in the `method` argument. The second row is for the augmentation method based on the algorithm specified by `SL.method`. The standard error for the unadjusted estimate is based on the (analytical or empirical) influence function. The standard error for the augmented estimate is based on either $\hat{\sigma}^2(\cdot)$ (without sample splitting) or $\tilde{\sigma}^2(\cdot)$ (with sample splitting).
+
+* The `sleete()` function returns a $(L + 2) \times 2$ numerical matrix, where $L$ is the size of the super learner library (i.e., the length of `SL.library`). The first column contains point estimates of the treatment effect, and the second column provides standard errors. The first row of the matrix is for the unadjusted method specified in the method argument. The next $L + 1$ rows report augmented estimates and standard errors based on the individual algorithms in the super learner library (in the original order) followed by the super learner itself. The standard errors are obtained in the same manner as in the `mleete()` function.
+
+
+## Example
+
+The `sleete` package will be illustrated using the `colon` dataset from the `survival` package. The dataset contains data from a randomized clinical trial of adjuvant therapy regimens for preventing cancer recurrence and death after resection of stage III colon carcinoma. The trial enrolled 929 eligible patients who had curative-intent resections of stage III colon cancer in the previous one to five weeks, and randomly assigned them to observation only (control), levamisole alone or levamisole plus fluorouracil (L+F) with equal allocation among the three groups.
+
+### Data
+
+The original `colon` data frame has 1858 observations and 16 variables.
+
+```{r}
+library(survival)
+data(cancer)
+dim(colon)
+```
+
+The first six entries are:
+
+```{r}
+head(colon)
+```
+
+* `id`: patient id
+* `study`: 1 for all patients
+* `rx`: Treatment - Obs(ervation), Lev(amisole), Lev(amisole)+5-FU
+* `sex`: 0=female, 1=male
+* `age`: in years
+* `obstruct`:	obstruction of colon by tumor (0=no, 1=yes)
+* `perfor`:	perforation of colon (0=no, 1=yes)
+* `adhere`:	adherence to nearby organs (0=no, 1=yes)
+* `nodes`:	number of lymph nodes with detectable cancer
+* `status`:	censoring status
+* `differ`:	differentiation of tumour (1=well, 2=moderate, 3=poor)
+* `extent`:	Extent of local spread (1=submucosa, 2=muscle, 3=serosa, 4=contiguous structures)
+* `surg`:	time from surgery to registration (0=short, 1=long)
+* `node4`: more than 4 positive lymph nodes (0=no, 1=yes)
+* `time`:	days until event or censoring
+* `etype`: event type (1=recurrence, 2=death)
+
+We are interested in comparing the L+F regimen with control with respect to overall survival. To create an appropriate dataset for our analysis, we will exclude duplicate entries for cancer recurrence as well as subjects in the levamisole-only group. The available baseline covariates are `sex`, `age`, `obstruct`, `perfor`, `adhere`, `nodes`, `differ`, `extent`, `surg`, and `node4`.
+
+```{r}
+data = subset(colon, subset=((etype==2)&(rx!="Lev")))
+dim(data)
+```
+
+### Analyses Using `mleete()`
+
+We first illustrate the `mleete()` function using three built-in methods for survival endpoints: `"log.HR"` (log-HR), `"surv.diff"` (difference in survival probability), and `"RMST.diff"` (difference in RMST). In the last two methods, the time argument `tau` is set to five years, or rather, $5 \times 365$ days. Otherwise we adopt the default settings of the `mleete()` function, including the use of linear regression with sample splitting.
+
+```{r}
+library(sleete)
+data$trt = as.numeric(data$rx=="Lev+5FU")
+pi = 0.5; tau = 5*365
+set.seed(12345)
+```
+
+**Log HR**
+```{r}
+round(mleete(data, "time", event="status", trt="trt",
+             basecov.cont=c("age", "nodes", "differ", "extent"),
+             basecov.cat=c("sex", "obstruct", "perfor", "adhere", "surg", "node4"),
+             pi=pi, method="log.HR"), digits=3)
+```
+
+**Difference in survival probability**
+```{r}
+round(mleete(data, "time", event="status", trt="trt",
+             basecov.cont=c("age", "nodes", "differ", "extent"),
+             basecov.cat=c("sex", "obstruct", "perfor", "adhere", "surg", "node4"),
+             pi=pi, method="surv.diff", tau=tau), digits=3)
+```
+
+**Difference in RMST**
+```{r}
+round(mleete(data, "time", event="status", trt="trt",
+             basecov.cont=c("age", "nodes", "differ", "extent"),
+             basecov.cat=c("sex", "obstruct", "perfor", "adhere", "surg", "node4"),
+             pi=pi, method="RMST.diff", tau=tau), digits=1)
+```
+
+
+### Analyses Using `sleete()`
+
+Next, we apply the `sleete()` function with the default settings, including the use of sample splitting and a collection of candidate algorithms including a linear model, an analogous additive model, a regression tree, and a random forest.
+
+**Log HR**
+```{r}
+round(sleete(data, "time", event="status", trt="trt",
+             basecov.cont=c("age", "nodes", "differ", "extent"),
+             basecov.cat=c("sex", "obstruct", "perfor", "adhere", "surg", "node4"),
+             pi=pi, method="log.HR"), digits=3)
+```
+
+**Difference in survival probability**
+```{r}
+round(sleete(data, "time", event="status", trt="trt",
+             basecov.cont=c("age", "nodes", "differ", "extent"),
+             basecov.cat=c("sex", "obstruct", "perfor", "adhere", "surg", "node4"),
+             pi=pi, method="surv.diff", tau=tau), digits=3)
+```
+
+**Difference in RMST**
+```{r}
+round(sleete(data, "time", event="status", trt="trt",
+             basecov.cont=c("age", "nodes", "differ", "extent"),
+             basecov.cat=c("sex", "obstruct", "perfor", "adhere", "surg", "node4"),
+             pi=pi, method="RMST.diff", tau=tau), digits=1)
+```
